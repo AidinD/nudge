@@ -1,6 +1,7 @@
-/** The reminder text currently being shown in the fullscreen overlay. */
+/** The reminder currently being shown, and where it's being shown. */
 export interface OverlayStep {
   reminderId: string
   text: string
   graceSeconds: number
+  mode: 'fullscreen' | 'corner'
 }

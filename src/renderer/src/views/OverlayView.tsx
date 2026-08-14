@@ -62,7 +62,7 @@ export default function OverlayView(): JSX.Element {
   const canConfirm = secondsLeft <= 0
 
   return (
-    <div className="overlay">
+    <div className={step.mode === 'corner' ? 'overlay overlay-corner' : 'overlay'}>
       <p className="overlay-text">{step.text}</p>
       <button
         className="primary overlay-confirm"
