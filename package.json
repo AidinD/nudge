@@ -31,7 +31,7 @@
     "react-dom": "^18.3.1"
   },
   "build": {
-    "appId": "io.thegang.nudge",
+    "appId": "dev.aidind.nudge",
     "productName": "Nudge",
     "directories": {
       "output": "dist"
@@ -41,7 +41,8 @@
       "resources/**"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "resources/icon.ico"
     }
   }
 }
