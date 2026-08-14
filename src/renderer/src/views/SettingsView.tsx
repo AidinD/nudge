@@ -10,6 +10,11 @@ export default function SettingsView(): JSX.Element {
   const [newText, setNewText] = useState('')
   const [minMinutes, setMinMinutes] = useState(30)
   const [maxMinutes, setMaxMinutes] = useState(60)
+  // Free-text drafts for the interval fields, so the user can clear the
+  // field and type a new value instead of it snapping back on every
+  // keystroke. Committed (clamped + persisted) on blur.
+  const [minDraft, setMinDraft] = useState('30')
+  const [maxDraft, setMaxDraft] = useState('60')
   const [running, setRunning] = useState(false)
   const [loaded, setLoaded] = useState(false)
 
@@ -18,6 +23,8 @@ export default function SettingsView(): JSX.Element {
       setReminders(store.reminders)
       setMinMinutes(store.minIntervalMinutes)
       setMaxMinutes(store.maxIntervalMinutes)
+      setMinDraft(String(store.minIntervalMinutes))
+      setMaxDraft(String(store.maxIntervalMinutes))
       setRunning(store.running)
       setLoaded(true)
     })
@@ -42,11 +49,16 @@ export default function SettingsView(): JSX.Element {
     persist({ reminders: next })
   }
 
-  function commitInterval(nextMin: number, nextMax: number): void {
-    const min = Math.max(1, Math.round(nextMin))
-    const max = Math.max(min, Math.round(nextMax))
+  /** Clamp the drafts to valid numbers, persist, and reflect the result back into both fields. */
+  function commitInterval(): void {
+    const parsedMin = Number(minDraft)
+    const parsedMax = Number(maxDraft)
+    const min = Math.max(1, Math.round(Number.isFinite(parsedMin) ? parsedMin : minMinutes))
+    const max = Math.max(min, Math.round(Number.isFinite(parsedMax) ? parsedMax : maxMinutes))
     setMinMinutes(min)
     setMaxMinutes(max)
+    setMinDraft(String(min))
+    setMaxDraft(String(max))
     persist({ minIntervalMinutes: min, maxIntervalMinutes: max })
   }
 
@@ -101,8 +113,12 @@ export default function SettingsView(): JSX.Element {
             <input
               type="number"
               min={1}
-              value={minMinutes}
-              onChange={(e) => commitInterval(Number(e.target.value), maxMinutes)}
+              value={minDraft}
+              onChange={(e) => setMinDraft(e.target.value)}
+              onBlur={commitInterval}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitInterval()
+              }}
             />
           </label>
           <label>
@@ -110,8 +126,12 @@ export default function SettingsView(): JSX.Element {
             <input
               type="number"
               min={1}
-              value={maxMinutes}
-              onChange={(e) => commitInterval(minMinutes, Number(e.target.value))}
+              value={maxDraft}
+              onChange={(e) => setMaxDraft(e.target.value)}
+              onBlur={commitInterval}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitInterval()
+              }}
             />
           </label>
         </div>
