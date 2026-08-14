@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
+import icon from '../../resources/icon.png?asset'
 import { readStore, writeStore } from './store'
 import type { StoreData, Reminder } from '../shared/store'
 import type { OverlayStep } from '../shared/ipc'
@@ -162,6 +163,7 @@ function createMainWindow(): void {
     autoHideMenuBar: true,
     backgroundColor: '#0d0f13',
     title: 'Nudge',
+    icon,
     webPreferences: {
       preload,
       sandbox: false,
