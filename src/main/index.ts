@@ -1,35 +1,34 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import icon from '../../resources/icon.png?asset'
 import { readStore, writeStore } from './store'
 import type { StoreData, Reminder } from '../shared/store'
 import type { OverlayStep } from '../shared/ipc'
 
-// See PomPom's main/index.ts for the original finding: Chromium throttles a
-// backgrounded/occluded window's timers even with per-window
-// backgroundThrottling disabled, unless these platform features are off too.
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,IntensiveWakeUpThrottling')
 
 let mainWindow: BrowserWindow | null = null
-let overlayWindow: BrowserWindow | null = null
+let fullscreenWindow: BrowserWindow | null = null
+let cornerWindow: BrowserWindow | null = null
 
-/** The reminder currently being shown in the overlay (pull-based seed for its renderer). */
 let pendingOverlayStep: OverlayStep | null = null
-
-/** Timer handle for the next scheduled nudge; null while stopped. */
+let activeOverlayMode: 'fullscreen' | 'corner' | null = null
 let scheduleTimer: ReturnType<typeof setTimeout> | null = null
 
 const GRACE_SECONDS = 5
+const CORNER_WIDTH = 360
+const CORNER_HEIGHT = 160
+const CORNER_MARGIN = 16
 
 const preload = join(__dirname, '../preload/index.js')
 
 function loadRoute(win: BrowserWindow, route: '' | 'overlay'): void {
-  const hash = route ? `#/${route}` : ''
+  const hash = route ? '#/' + route : ''
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (devUrl) {
-    win.loadURL(`${devUrl}${hash}`)
+    win.loadURL(devUrl + hash)
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'), route ? { hash: `/${route}` } : {})
+    win.loadFile(join(__dirname, '../renderer/index.html'), route ? { hash: '/' + route } : {})
   }
 }
 
@@ -38,14 +37,12 @@ function pickRandomReminder(reminders: Reminder[]): Reminder | null {
   return reminders[Math.floor(Math.random() * reminders.length)]
 }
 
-/** Random delay in ms, uniformly between the store's min/max minutes. */
 function randomDelayMs(store: StoreData): number {
-  const minMs = Math.max(0, store.minIntervalMinutes) * 60_000
-  const maxMs = Math.max(minMs, store.maxIntervalMinutes * 60_000)
+  const minMs = Math.max(0, store.minIntervalMinutes) * 60000
+  const maxMs = Math.max(minMs, store.maxIntervalMinutes * 60000)
   return minMs + Math.random() * (maxMs - minMs)
 }
 
-/** Clear any pending scheduled nudge without touching `running` state. */
 function clearSchedule(): void {
   if (scheduleTimer) {
     clearTimeout(scheduleTimer)
@@ -53,7 +50,6 @@ function clearSchedule(): void {
   }
 }
 
-/** Schedule the next nudge from now, based on the current store's interval. */
 function scheduleNext(): void {
   clearSchedule()
   const store = readStore()
@@ -66,21 +62,31 @@ function fireNudge(): void {
   if (!store.running) return
   const reminder = pickRandomReminder(store.reminders)
   if (!reminder) {
-    // No reminders configured; just try again later instead of stalling forever.
     scheduleNext()
     return
   }
-  showOverlay({ reminderId: reminder.id, text: reminder.text, graceSeconds: GRACE_SECONDS })
+  showOverlay({
+    reminderId: reminder.id,
+    text: reminder.text,
+    graceSeconds: GRACE_SECONDS,
+    mode: store.fullscreenTakeover ? 'fullscreen' : 'corner'
+  })
 }
 
 function showOverlay(step: OverlayStep): void {
   pendingOverlayStep = step
-  const win = getOverlayWindow()
+  activeOverlayMode = step.mode
+  const win = step.mode === 'corner' ? getCornerWindow() : getFullscreenWindow()
   const reveal = (): void => {
     if (win.isDestroyed()) return
     win.webContents.send('overlay:step', step)
-    win.show()
-    win.focus()
+    if (step.mode === 'corner') {
+      positionCornerWindow(win)
+      win.showInactive()
+    } else {
+      win.show()
+      win.focus()
+    }
   }
   if (win.webContents.isLoading()) {
     win.webContents.once('did-finish-load', reveal)
@@ -111,19 +117,35 @@ function registerTimerIpc(): void {
 function registerOverlayIpc(): void {
   ipcMain.handle('overlay:get', () => pendingOverlayStep)
 
-  // The overlay is fully locked (per DECISIONS.md): the only way out is the
-  // Confirm click after the grace period, which is what fires this.
   ipcMain.on('overlay:confirm', () => {
     pendingOverlayStep = null
-    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.close()
+    const win = activeOverlayMode === 'corner' ? cornerWindow : fullscreenWindow
+    activeOverlayMode = null
+    if (win && !win.isDestroyed()) win.close()
     scheduleNext()
   })
 }
 
-/** The fullscreen, always-on-top, unclosable-by-the-user overlay window. */
-function getOverlayWindow(): BrowserWindow {
-  if (overlayWindow && !overlayWindow.isDestroyed()) return overlayWindow
-  overlayWindow = new BrowserWindow({
+function positionCornerWindow(win: BrowserWindow): void {
+  const display = screen.getPrimaryDisplay()
+  const workArea = display.workArea
+  win.setBounds({
+    x: workArea.x + workArea.width - CORNER_WIDTH - CORNER_MARGIN,
+    y: workArea.y + workArea.height - CORNER_HEIGHT - CORNER_MARGIN,
+    width: CORNER_WIDTH,
+    height: CORNER_HEIGHT
+  })
+}
+
+function guardClose(win: BrowserWindow): void {
+  win.on('close', (event) => {
+    if (pendingOverlayStep) event.preventDefault()
+  })
+}
+
+function getFullscreenWindow(): BrowserWindow {
+  if (fullscreenWindow && !fullscreenWindow.isDestroyed()) return fullscreenWindow
+  fullscreenWindow = new BrowserWindow({
     show: false,
     fullscreen: true,
     alwaysOnTop: true,
@@ -139,17 +161,43 @@ function getOverlayWindow(): BrowserWindow {
       backgroundThrottling: false
     }
   })
-  overlayWindow.setAlwaysOnTop(true, 'screen-saver')
-  // Locked overlay: block the OS close affordances (Alt+F4 etc). Confirm is
-  // the only way out, via overlay:confirm above.
-  overlayWindow.on('close', (event) => {
-    if (pendingOverlayStep) event.preventDefault()
+  fullscreenWindow.setAlwaysOnTop(true, 'screen-saver')
+  guardClose(fullscreenWindow)
+  fullscreenWindow.on('closed', () => {
+    fullscreenWindow = null
   })
-  overlayWindow.on('closed', () => {
-    overlayWindow = null
+  loadRoute(fullscreenWindow, 'overlay')
+  return fullscreenWindow
+}
+
+function getCornerWindow(): BrowserWindow {
+  if (cornerWindow && !cornerWindow.isDestroyed()) return cornerWindow
+  cornerWindow = new BrowserWindow({
+    width: CORNER_WIDTH,
+    height: CORNER_HEIGHT,
+    show: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    frame: false,
+    resizable: false,
+    movable: false,
+    backgroundColor: '#0d0f13',
+    title: 'Nudge',
+    webPreferences: {
+      preload,
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: false
+    }
   })
-  loadRoute(overlayWindow, 'overlay')
-  return overlayWindow
+  cornerWindow.setAlwaysOnTop(true, 'screen-saver')
+  guardClose(cornerWindow)
+  cornerWindow.on('closed', () => {
+    cornerWindow = null
+  })
+  loadRoute(cornerWindow, 'overlay')
+  return cornerWindow
 }
 
 function createMainWindow(): void {
@@ -180,7 +228,8 @@ function createMainWindow(): void {
 
   mainWindow.on('closed', () => {
     mainWindow = null
-    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.destroy()
+    if (fullscreenWindow && !fullscreenWindow.isDestroyed()) fullscreenWindow.destroy()
+    if (cornerWindow && !cornerWindow.isDestroyed()) cornerWindow.destroy()
   })
 }
 
@@ -190,7 +239,6 @@ app.whenReady().then(() => {
   registerOverlayIpc()
   createMainWindow()
 
-  // Resume a running schedule across app restarts.
   if (readStore().running) scheduleNext()
 
   app.on('activate', () => {

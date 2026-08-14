@@ -9,11 +9,14 @@ export interface StoreData {
   minIntervalMinutes: number
   maxIntervalMinutes: number
   running: boolean
+  /** true = fullscreen takeover, false = small popup in the corner of the screen. */
+  fullscreenTakeover: boolean
 }
 
 export const DEFAULT_STORE: StoreData = {
   reminders: [],
   minIntervalMinutes: 30,
   maxIntervalMinutes: 60,
-  running: false
+  running: false,
+  fullscreenTakeover: true
 }

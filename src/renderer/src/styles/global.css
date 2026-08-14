@@ -133,6 +133,20 @@ button.primary:hover:not(:disabled) {
   margin-top: 8px;
 }
 
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.radio-row input {
+  width: auto;
+  padding: 0;
+}
+
 .overlay {
   position: fixed;
   inset: 0;
@@ -156,4 +170,22 @@ button.primary:hover:not(:disabled) {
 .overlay-confirm {
   font-size: 18px;
   padding: 14px 40px;
+}
+
+.overlay-corner {
+  gap: 14px;
+  border: 1px solid #2a2e37;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.overlay-corner .overlay-text {
+  font-size: 16px;
+  font-weight: 600;
+  padding: 0 16px;
+}
+
+.overlay-corner .overlay-confirm {
+  font-size: 13px;
+  padding: 6px 16px;
 }

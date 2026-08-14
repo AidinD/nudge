@@ -16,6 +16,7 @@ export default function SettingsView(): JSX.Element {
   const [minDraft, setMinDraft] = useState('30')
   const [maxDraft, setMaxDraft] = useState('60')
   const [running, setRunning] = useState(false)
+  const [fullscreenTakeover, setFullscreenTakeover] = useState(true)
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export default function SettingsView(): JSX.Element {
       setMinDraft(String(store.minIntervalMinutes))
       setMaxDraft(String(store.maxIntervalMinutes))
       setRunning(store.running)
+      setFullscreenTakeover(store.fullscreenTakeover)
       setLoaded(true)
     })
   }, [])
@@ -60,6 +62,11 @@ export default function SettingsView(): JSX.Element {
     setMinDraft(String(min))
     setMaxDraft(String(max))
     persist({ minIntervalMinutes: min, maxIntervalMinutes: max })
+  }
+
+  function toggleTakeoverMode(next: boolean): void {
+    setFullscreenTakeover(next)
+    persist({ fullscreenTakeover: next })
   }
 
   async function toggleRunning(): Promise<void> {
@@ -135,6 +142,28 @@ export default function SettingsView(): JSX.Element {
             />
           </label>
         </div>
+      </section>
+
+      <section>
+        <h2>Notification style</h2>
+        <label className="radio-row">
+          <input
+            type="radio"
+            name="takeover-mode"
+            checked={fullscreenTakeover}
+            onChange={() => toggleTakeoverMode(true)}
+          />
+          Fullscreen takeover
+        </label>
+        <label className="radio-row">
+          <input
+            type="radio"
+            name="takeover-mode"
+            checked={!fullscreenTakeover}
+            onChange={() => toggleTakeoverMode(false)}
+          />
+          Small popup in the corner
+        </label>
       </section>
 
       <section>
