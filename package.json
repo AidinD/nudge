@@ -1,0 +1,47 @@
+{
+  "name": "nudge",
+  "version": "0.1.0",
+  "description": "A Windows reminder app (Electron + React): random-interval nudges with a fullscreen takeover and a grace period before you can confirm.",
+  "main": "./out/main/index.js",
+  "author": "Nudge",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "predist": "npm run clean",
+    "dist": "electron-vite build && electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "build": {
+    "appId": "dev.aidind.nudge",
+    "productName": "Nudge",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "resources/**"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
