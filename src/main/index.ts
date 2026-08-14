@@ -129,7 +129,6 @@ function getOverlayWindow(): BrowserWindow {
     alwaysOnTop: true,
     skipTaskbar: true,
     frame: false,
-    closable: false,
     backgroundColor: '#0d0f13',
     title: 'Nudge',
     webPreferences: {
