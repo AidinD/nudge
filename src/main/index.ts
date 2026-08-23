@@ -1,6 +1,15 @@
 import { app, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
-import icon from '../../resources/icon.png?asset'
+// electron-updater is CommonJS; a named ESM import ("import { autoUpdater }")
+// fails at runtime in the packaged app. Import the default export and
+// destructure - the pattern electron-vite documents for CJS deps, and the one
+// Jot and Nib use.
+import electronUpdater from 'electron-updater'
+const { autoUpdater } = electronUpdater
+// The multi-size .ico rather than the single PNG, so Windows can pick the
+// frame for the current DPI scale instead of shrinking one bitmap - see
+// scripts/generate-icon.mjs.
+import icon from '../../resources/icon.ico?asset'
 import { readStore, writeStore } from './store'
 import type { StoreData, Reminder } from '../shared/store'
 import type { OverlayStep } from '../shared/ipc'
@@ -95,6 +104,62 @@ function showOverlay(step: OverlayStep): void {
   }
 }
 
+/**
+ * Check GitHub for a newer release, once, at startup - the same arrangement as
+ * Jot and Nib.
+ *
+ * Nudge is unsigned, which does not stop electron-updater on Windows: the first
+ * install triggers SmartScreen, updates after that are silent. The download
+ * installs on quit rather than mid-session, which is the library's default and
+ * the right one for an app that sits in the background all day; the settings
+ * window gets a toast offering to restart now.
+ *
+ * Never in development: there is no packaged app to replace, and the check only
+ * produces a confusing error in the log.
+ */
+function initAutoUpdater(): void {
+  if (!app.isPackaged) return
+
+  autoUpdater.on('update-available', (info) => {
+    console.log(`Nudge update available: ${info.version}`)
+  })
+  autoUpdater.on('update-not-available', (info) => {
+    console.log(`Nudge is up to date (${info.version})`)
+  })
+  autoUpdater.on('error', (error) => {
+    // Being offline is the common case here, and it is not worth a dialog.
+    console.error('Nudge update check failed', error)
+  })
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`Nudge update ${info.version} downloaded; it installs on quit`)
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send('update:ready', info.version)
+    }
+  })
+
+  void autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+    console.error('Nudge update check could not start', error)
+  })
+}
+
+/**
+ * Window controls, because the settings window is frameless (like Jot and Nib)
+ * and its header row is the title bar. Minimise + close only: this is a narrow
+ * settings panel, so a maximise button would be a button for nothing.
+ */
+function registerWindowIpc(): void {
+  ipcMain.handle('window:minimize', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize()
+  })
+  ipcMain.handle('window:close', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.close()
+  })
+  // "Restart to update" in the toast: quit now and come back on the new version.
+  ipcMain.on('update:install', () => {
+    autoUpdater.quitAndInstall()
+  })
+}
+
 function registerStoreIpc(): void {
   ipcMain.handle('store:get', () => readStore())
   ipcMain.handle('store:set', (_event, partial: Partial<StoreData>) => writeStore(partial))
@@ -151,7 +216,7 @@ function getFullscreenWindow(): BrowserWindow {
     alwaysOnTop: true,
     skipTaskbar: true,
     frame: false,
-    backgroundColor: '#0d0f13',
+    backgroundColor: '#1b1c1f',
     title: 'Nudge',
     webPreferences: {
       preload,
@@ -181,7 +246,7 @@ function getCornerWindow(): BrowserWindow {
     frame: false,
     resizable: false,
     movable: false,
-    backgroundColor: '#0d0f13',
+    backgroundColor: '#1b1c1f',
     title: 'Nudge',
     webPreferences: {
       preload,
@@ -207,8 +272,12 @@ function createMainWindow(): void {
     minWidth: 400,
     minHeight: 480,
     show: false,
+    // Frameless, like Jot and Nib: the app header row IS the title bar (drag
+    // handle plus window buttons), so the window is not topped by a second,
+    // OS-drawn one saying the same thing.
+    frame: false,
     autoHideMenuBar: true,
-    backgroundColor: '#0d0f13',
+    backgroundColor: '#1b1c1f',
     title: 'Nudge',
     icon,
     webPreferences: {
@@ -234,6 +303,8 @@ function createMainWindow(): void {
 }
 
 app.whenReady().then(() => {
+  initAutoUpdater()
+  registerWindowIpc()
   registerStoreIpc()
   registerTimerIpc()
   registerOverlayIpc()

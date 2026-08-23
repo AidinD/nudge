@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Reminder, StoreData } from '../../../shared/store'
+import { NudgeMark } from '../NudgeMark'
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -18,6 +19,9 @@ export default function SettingsView(): JSX.Element {
   const [running, setRunning] = useState(false)
   const [fullscreenTakeover, setFullscreenTakeover] = useState(true)
   const [loaded, setLoaded] = useState(false)
+  // Set once electron-updater has a new version on disk; the toast is the only
+  // thing that tells the user, since the install itself waits for a quit.
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null)
 
   useEffect(() => {
     window.nudge.store.get().then((store) => {
@@ -30,6 +34,10 @@ export default function SettingsView(): JSX.Element {
       setFullscreenTakeover(store.fullscreenTakeover)
       setLoaded(true)
     })
+  }, [])
+
+  useEffect(() => {
+    return window.nudge.onUpdateReady((version) => setUpdateVersion(version))
   }, [])
 
   function persist(partial: Partial<StoreData>): void {
@@ -79,100 +87,137 @@ export default function SettingsView(): JSX.Element {
     }
   }
 
-  if (!loaded) return <div className="app">Loading...</div>
+  if (!loaded) return <div className="app loading">Loading...</div>
 
   return (
     <div className="app">
-      <h1>Nudge</h1>
-      <p className="subtitle">Random reminders that take over your screen.</p>
-
-      <section>
-        <h2>Reminders</h2>
-        <ul className="reminder-list">
-          {reminders.map((r) => (
-            <li key={r.id}>
-              <span>{r.text}</span>
-              <button className="ghost" onClick={() => removeReminder(r.id)}>
-                Remove
-              </button>
-            </li>
-          ))}
-          {reminders.length === 0 && <li className="empty">No reminders yet.</li>}
-        </ul>
-        <div className="add-row">
-          <input
-            value={newText}
-            onChange={(e) => setNewText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') addReminder()
-            }}
-            placeholder="e.g. Drink water"
-          />
-          <button onClick={addReminder}>Add</button>
+      <header className="app-header">
+        {/* Frameless window: this row is the drag handle. */}
+        <div className="brand">
+          <NudgeMark />
+          <span className="wordmark">Nudge</span>
+          <span className="version">v{__APP_VERSION__}</span>
         </div>
-      </section>
-
-      <section>
-        <h2>Interval</h2>
-        <div className="interval-row">
-          <label>
-            Min (minutes)
-            <input
-              type="number"
-              min={1}
-              value={minDraft}
-              onChange={(e) => setMinDraft(e.target.value)}
-              onBlur={commitInterval}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitInterval()
-              }}
-            />
-          </label>
-          <label>
-            Max (minutes)
-            <input
-              type="number"
-              min={1}
-              value={maxDraft}
-              onChange={(e) => setMaxDraft(e.target.value)}
-              onBlur={commitInterval}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitInterval()
-              }}
-            />
-          </label>
+        <div className="window-controls">
+          <button type="button" onClick={() => void window.nudge.minimizeWindow()} title="Minimise">
+            –
+          </button>
+          <button
+            type="button"
+            className="danger"
+            onClick={() => void window.nudge.closeWindow()}
+            title="Close"
+          >
+            ×
+          </button>
         </div>
-      </section>
+      </header>
 
-      <section>
-        <h2>Notification style</h2>
-        <label className="radio-row">
-          <input
-            type="radio"
-            name="takeover-mode"
-            checked={fullscreenTakeover}
-            onChange={() => toggleTakeoverMode(true)}
-          />
-          Fullscreen takeover
-        </label>
-        <label className="radio-row">
-          <input
-            type="radio"
-            name="takeover-mode"
-            checked={!fullscreenTakeover}
-            onChange={() => toggleTakeoverMode(false)}
-          />
-          Small popup in the corner
-        </label>
-      </section>
+      <div className="body">
+        <section>
+          <h2>Reminders</h2>
+          <ul className="reminder-list">
+            {reminders.map((r) => (
+              <li key={r.id}>
+                <span>{r.text}</span>
+                <button className="ghost" onClick={() => removeReminder(r.id)}>
+                  Remove
+                </button>
+              </li>
+            ))}
+            {reminders.length === 0 && <li className="empty">No reminders yet.</li>}
+          </ul>
+          <div className="add-row">
+            <input
+              value={newText}
+              onChange={(e) => setNewText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') addReminder()
+              }}
+              placeholder="e.g. Drink water"
+            />
+            <button onClick={addReminder}>Add</button>
+          </div>
+        </section>
 
-      <section>
-        <button className="primary" onClick={toggleRunning} disabled={reminders.length === 0}>
-          {running ? 'Stop' : 'Start'}
-        </button>
-        {reminders.length === 0 && <p className="hint">Add at least one reminder to start.</p>}
-        {running && <p className="hint">Running - next nudge at a random time.</p>}
-      </section>
+        <section>
+          <h2>Interval</h2>
+          <div className="interval-row">
+            <label>
+              Min (minutes)
+              <input
+                type="number"
+                min={1}
+                value={minDraft}
+                onChange={(e) => setMinDraft(e.target.value)}
+                onBlur={commitInterval}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitInterval()
+                }}
+              />
+            </label>
+            <label>
+              Max (minutes)
+              <input
+                type="number"
+                min={1}
+                value={maxDraft}
+                onChange={(e) => setMaxDraft(e.target.value)}
+                onBlur={commitInterval}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitInterval()
+                }}
+              />
+            </label>
+          </div>
+        </section>
+
+        <section>
+          <h2>Notification style</h2>
+          <label className="radio-row">
+            <input
+              type="radio"
+              name="takeover-mode"
+              checked={fullscreenTakeover}
+              onChange={() => toggleTakeoverMode(true)}
+            />
+            Fullscreen takeover
+          </label>
+          <label className="radio-row">
+            <input
+              type="radio"
+              name="takeover-mode"
+              checked={!fullscreenTakeover}
+              onChange={() => toggleTakeoverMode(false)}
+            />
+            Small popup in the corner
+          </label>
+        </section>
+
+        <section>
+          <button className="primary" onClick={toggleRunning} disabled={reminders.length === 0}>
+            {running ? 'Stop' : 'Start'}
+          </button>
+          {reminders.length === 0 && <p className="hint">Add at least one reminder to start.</p>}
+          {running && <p className="hint">Running - next nudge at a random time.</p>}
+        </section>
+      </div>
+
+      {updateVersion !== null && (
+        <div className="update-toast">
+          <span className="update-toast-text">Update ready (v{updateVersion})</span>
+          <button className="update-toast-action" onClick={() => window.nudge.installUpdate()}>
+            Restart to update
+          </button>
+          <button
+            className="update-toast-dismiss"
+            title="Dismiss"
+            onClick={() => setUpdateVersion(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   )
 }

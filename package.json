@@ -1,10 +1,14 @@
 {
   "name": "nudge",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A Windows reminder app (Electron + React): random-interval nudges with a fullscreen takeover and a grace period before you can confirm.",
   "main": "./out/main/index.js",
   "author": "Nudge",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AidinD/nudge.git"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -13,7 +17,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "predist": "npm run clean",
-    "dist": "electron-vite build && electron-builder --win --publish never"
+    "dist": "electron-vite build && electron-builder --win --publish never",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
@@ -27,6 +32,7 @@
     "vite": "^5.4.11"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -34,6 +40,7 @@
     "appId": "dev.aidind.nudge",
     "productName": "Nudge",
     "directories": {
+      "buildResources": "resources",
       "output": "dist"
     },
     "files": [
@@ -43,6 +50,12 @@
     "win": {
       "target": "nsis",
       "icon": "resources/icon.ico"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "AidinD",
+      "repo": "nudge",
+      "releaseType": "release"
     }
   }
 }

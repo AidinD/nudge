@@ -1,10 +1,14 @@
 import { resolve } from 'path'
-import { defineConfig } from 'electron-vite'
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import pkg from './package.json'
 
 export default defineConfig({
   main: {
+    // electron-updater (and any other runtime dependency) must stay a real
+    // require in the packaged app rather than being bundled into the main
+    // chunk - the same setup Jot and Nib use.
+    plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
         input: {
@@ -14,6 +18,7 @@ export default defineConfig({
     }
   },
   preload: {
+    plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
         input: {
