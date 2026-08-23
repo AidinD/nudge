@@ -11,15 +11,11 @@ import { fileURLToPath } from 'url'
  * scaled off its 100-unit viewBox, so the mark beside the wordmark and the mark
  * in the taskbar are the same drawing. Change one, change the other.
  *
- * Two drawings, per the family rule Nib's and Jot's generators set out:
+ * One drawing at every size - no simplified twin for the small frames, because
+ * a second drawing would be a second mark nobody approved.
  *
- *  - The full mark at 32px and up: ring, shaft, head.
- *  - Below 32, a heavier ring and the shaft dropped altogether. At that size
- *    the shaft is a smudge running into the ring, and what survives of the
- *    gesture is the head - so the small drawing is a chevron and a ring.
- *
- * Both go into a multi-size icon.ico, so Windows picks the drawing meant for the
- * size it is asking for instead of downscaling the detailed one.
+ * It goes into a multi-size icon.ico so Windows renders each frame at its own
+ * size rather than downscaling the 256.
  *
  * The PNG and ICO writers are Nib's and Jot's, kept byte-compatible on purpose -
  * four apps, one icon pipeline.
@@ -144,69 +140,68 @@ function coverage(signedDistance, feather = 1.1) {
   return clamp(-signedDistance / feather + 0.5, 0, 1)
 }
 
-/** The amber ramp from NudgeMark's gradient, run across the diagonal. */
-function amber(x, y, size) {
-  const t = clamp((x / size) * 0.5 + (y / size) * 0.5, 0, 1)
+/**
+ * The amber ramp from NudgeMark's gradient.
+ *
+ * Per SHAPE, not across the canvas: the component paints each element with an
+ * objectBoundingBox gradient, so the ring runs the full ramp over the ring's
+ * box and the head runs it again over its own. The boxes are the geometry
+ * boxes, without the stroke, which is what SVG measures against.
+ */
+function amber(px, py, box) {
+  const t = clamp(((px - box[0]) / (box[2] - box[0])) * 0.5 + ((py - box[1]) / (box[3] - box[1])) * 0.5, 0, 1)
   return [255, Math.round(mix(194, 107, t)), Math.round(mix(71, 74, t))]
 }
 
 // ---------- the two drawings ----------
 
 /*
- * The two drawings, as fractions of the canvas.
+ * ONE drawing, at every size: NudgeMark.tsx's geometry over its 100-unit
+ * viewBox. The ring at (64,50), r=26, stroke 10, and the head as two arms
+ * meeting at (24,50). A stroked line with round caps is
+ * exactly a capsule, and a stroked circle exactly a ring, so these are not an
+ * approximation of the component - they are the same shapes.
  *
- * FULL is NudgeMark's geometry over its 100-unit viewBox: the ring at (64,50)
- * with r=26 and stroke 10, a stub of shaft from x=8 to x=22, and the head as
- * two arms meeting at (24,50).
- *
- * SMALL keeps the ring and the head and drops the shaft, on a heavier stroke.
- * Below 32px the shaft has nowhere to be: it is a pixel long and it welds the
- * head to the ring.
+ * Jot and Nib carry a second, simplified drawing for the sizes below 32. Nudge
+ * does not get one: a second drawing means a second mark to approve, which is
+ * not what an app icon is for.
  */
-const FULL = {
-  ring: { cx: 0.64, cy: 0.5, r: 0.26, half: 0.05 },
-  parts: [
-    { from: [0.08, 0.5], to: [0.22, 0.5], ra: 0.05, rb: 0.05 },
-    { from: [0.15, 0.42], to: [0.24, 0.5], ra: 0.05, rb: 0.05 },
-    { from: [0.24, 0.5], to: [0.15, 0.58], ra: 0.05, rb: 0.05 }
-  ]
-}
+const RING = { cx: 64, cy: 50, r: 26, half: 5 }
+// Ring and head only. NudgeMark.tsx also carries a shaft path, but it does not
+// render and never has: its stroke paint is an objectBoundingBox gradient, and
+// a horizontal line has a zero-height bounding box, which SVG says makes the
+// element not render at all. The mark IS a ring and a chevron, so that is what
+// the icon draws.
+const STROKES = [
+  { from: [15, 42], to: [24, 50], radius: 5 },
+  { from: [24, 50], to: [15, 58], radius: 5 }
+]
 
-const SMALL = {
-  ring: { cx: 0.63, cy: 0.5, r: 0.27, half: 0.075 },
-  parts: [
-    { from: [0.13, 0.38], to: [0.27, 0.5], ra: 0.075, rb: 0.075 },
-    { from: [0.27, 0.5], to: [0.13, 0.62], ra: 0.075, rb: 0.075 }
-  ]
-}
+const RING_BOX = [38, 24, 90, 76]
+const HEAD_BOX = [15, 42, 24, 58]
 
-/** A ring, and the arrow giving it a push. */
+/** A ring, and the chevron giving it a push. */
 function shadeMark(x, y, size) {
-  const mark = size < 32 ? SMALL : FULL
-  const { ring, parts } = mark
+  const unit = size / 100
+  // Work in the 100-unit space the mark is drawn in, then scale the distance
+  // back to pixels - one conversion instead of one per primitive.
+  const ux = x / unit
+  const uy = y / unit
 
-  let distance = sdRing(x, y, size * ring.cx, size * ring.cy, size * ring.r, size * ring.half)
-  for (const part of parts) {
-    distance = Math.min(
-      distance,
-      sdCone(
-        x,
-        y,
-        size * part.from[0],
-        size * part.from[1],
-        size * part.to[0],
-        size * part.to[1],
-        size * part.ra,
-        size * part.rb
-      )
+  const ring = sdRing(ux, uy, RING.cx, RING.cy, RING.r, RING.half)
+  let head = Infinity
+  for (const stroke of STROKES) {
+    head = Math.min(
+      head,
+      sdCone(ux, uy, stroke.from[0], stroke.from[1], stroke.to[0], stroke.to[1], stroke.radius, stroke.radius)
     )
   }
 
-  const alpha = coverage(distance)
+  const alpha = coverage(Math.min(ring, head) * unit)
   if (alpha === 0) {
     return [0, 0, 0, 0]
   }
-  const [red, green, blue] = amber(x, y, size)
+  const [red, green, blue] = head < ring ? amber(ux, uy, HEAD_BOX) : amber(ux, uy, RING_BOX)
   return [red, green, blue, Math.round(255 * alpha)]
 }
 
