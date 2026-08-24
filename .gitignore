@@ -2,3 +2,9 @@ node_modules
 out
 dist
 *.tsbuildinfo
+
+# Captures of a running app are a leak, not an asset. Two sibling repos shipped
+# dashboard screenshots to a public remote before this line existed.
+screenshots/
+captures/
+.helm-goal/

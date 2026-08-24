@@ -19,7 +19,8 @@
     "predist": "npm run clean",
     "dist": "electron-vite build && electron-builder --win --publish never",
     "release": "node scripts/release.mjs",
-    "icon": "node scripts/generate-icon.mjs"
+    "icon": "node scripts/generate-icon.mjs",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
