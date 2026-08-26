@@ -48,7 +48,7 @@ function run(command, args, env) {
 }
 
 // Before anything is built, so a refusal costs no time.
-const failures = preflight(exec, { tag, checks: ['cleanTree', 'notAlreadyReleased'] })
+const failures = preflight(exec, { tag, checks: ['cleanTree', 'nothingUnpushed', 'notAlreadyReleased'] })
 if (failures.length > 0) {
   fail(failures.map((failure) => failure.message).join('\n\n'))
 }
