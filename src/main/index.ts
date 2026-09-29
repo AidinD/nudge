@@ -11,8 +11,11 @@ const { autoUpdater } = electronUpdater
 // scripts/generate-icon.mjs.
 import icon from '../../resources/icon.ico?asset'
 import { readStore, writeStore } from './store'
+import { TakeoverQueue, type QueuedTakeover } from './takeoverQueue'
+import { RunScheduler } from './runs'
 import type { StoreData, Reminder } from '../shared/store'
 import type { OverlayStep } from '../shared/ipc'
+import type { TemplateEntry } from '../shared/schedule'
 
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,IntensiveWakeUpThrottling')
 
@@ -67,6 +70,7 @@ function scheduleNext(): void {
 }
 
 function fireNudge(): void {
+  scheduleTimer = null
   const store = readStore()
   if (!store.running) return
   const reminder = pickRandomReminder(store.reminders)
@@ -74,15 +78,53 @@ function fireNudge(): void {
     scheduleNext()
     return
   }
-  showOverlay({
-    reminderId: reminder.id,
+  queue.arrive({
+    source: { kind: 'random', reminderId: reminder.id },
     text: reminder.text,
-    graceSeconds: GRACE_SECONDS,
-    mode: store.fullscreenTakeover ? 'fullscreen' : 'corner'
+    dueAt: Date.now()
   })
 }
 
+// Every takeover, random or scheduled, goes through this one queue - see
+// takeoverQueue.ts. The random timer re-arms only once its nudge is settled,
+// shown and confirmed or burned, exactly as it did before there was a queue.
+const queue: TakeoverQueue = new TakeoverQueue({
+  show: (item) => {
+    let context: string | undefined
+    if (item.source.kind === 'run') {
+      // Context first: marking the last entry shown ends the run and removes it.
+      context = runs.contextLine(item.source.runId, item.source.entryId)
+      runs.markShown(item.source.runId, item.source.entryId)
+    }
+    showOverlay({
+      text: item.text,
+      context,
+      graceSeconds: GRACE_SECONDS,
+      mode: readStore().fullscreenTakeover ? 'fullscreen' : 'corner'
+    })
+  },
+  idle: closeOverlay,
+  confirmed: settle,
+  burned: (item) => {
+    console.log(`[Nudge] burned ${JSON.stringify(item.source)} due ${new Date(item.dueAt).toISOString()}`)
+    if (item.source.kind === 'run') {
+      runs.markBurned(item.source.runId, item.source.entryId)
+    }
+    settle(item)
+  }
+})
+
+const runs = new RunScheduler(queue, (active) => {
+  mainWindow?.webContents.send('runs:changed', active)
+})
+
+function settle(item: QueuedTakeover): void {
+  if (item.source.kind === 'random') scheduleNext()
+}
+
 function showOverlay(step: OverlayStep): void {
+  // The next queued item may want the other window than the one just confirmed.
+  if (activeOverlayMode && activeOverlayMode !== step.mode) closeOverlay()
   pendingOverlayStep = step
   activeOverlayMode = step.mode
   const win = step.mode === 'corner' ? getCornerWindow() : getFullscreenWindow()
@@ -102,6 +144,13 @@ function showOverlay(step: OverlayStep): void {
   } else {
     reveal()
   }
+}
+
+function closeOverlay(): void {
+  pendingOverlayStep = null
+  const win = activeOverlayMode === 'corner' ? cornerWindow : fullscreenWindow
+  activeOverlayMode = null
+  if (win && !win.isDestroyed()) win.close()
 }
 
 /**
@@ -162,7 +211,11 @@ function registerWindowIpc(): void {
 
 function registerStoreIpc(): void {
   ipcMain.handle('store:get', () => readStore())
-  ipcMain.handle('store:set', (_event, partial: Partial<StoreData>) => writeStore(partial))
+  // Runs belong to main (see runs.ts); the renderer changes them only through run:*.
+  ipcMain.handle('store:set', (_event, partial: Partial<StoreData>) => {
+    const { runs: _ignored, ...rest } = partial
+    return writeStore(rest)
+  })
 }
 
 function registerTimerIpc(): void {
@@ -175,19 +228,31 @@ function registerTimerIpc(): void {
   ipcMain.handle('timer:stop', () => {
     writeStore({ running: false })
     clearSchedule()
+    queue.withdraw((source) => source.kind === 'random')
     return readStore()
+  })
+}
+
+function registerRunIpc(): void {
+  ipcMain.handle('run:start', (_event, name: string, entries: TemplateEntry[]) => {
+    if (typeof name !== 'string' || !Array.isArray(entries)) {
+      throw new Error(`run:start expects (name: string, entries: array), got (${typeof name}, ${typeof entries})`)
+    }
+    runs.start(name, entries)
+    return readStore().runs
+  })
+  ipcMain.handle('run:stop', (_event, runId: string) => {
+    runs.stop(runId)
+    return readStore().runs
   })
 }
 
 function registerOverlayIpc(): void {
   ipcMain.handle('overlay:get', () => pendingOverlayStep)
 
+  // The queue decides what comes next: another takeover, or closing (idle).
   ipcMain.on('overlay:confirm', () => {
-    pendingOverlayStep = null
-    const win = activeOverlayMode === 'corner' ? cornerWindow : fullscreenWindow
-    activeOverlayMode = null
-    if (win && !win.isDestroyed()) win.close()
-    scheduleNext()
+    queue.confirm()
   })
 }
 
@@ -308,9 +373,11 @@ app.whenReady().then(() => {
   registerStoreIpc()
   registerTimerIpc()
   registerOverlayIpc()
+  registerRunIpc()
   createMainWindow()
 
   if (readStore().running) scheduleNext()
+  runs.resume()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()

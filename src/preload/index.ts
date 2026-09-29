@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { StoreData } from '../shared/store'
 import type { OverlayStep } from '../shared/ipc'
+import type { ActiveRun, TemplateEntry } from '../shared/schedule'
 
 const api = {
   /** Frameless window: the header row's buttons drive the real window. */
@@ -24,6 +25,19 @@ const api = {
     start: (): Promise<StoreData> => ipcRenderer.invoke('timer:start'),
     /** (main window) Stop the schedule; any pending nudge is cancelled. */
     stop: (): Promise<StoreData> => ipcRenderer.invoke('timer:stop')
+  },
+  runs: {
+    /** (main window) Start a run from a template as adjusted. Returns every active run. */
+    start: (name: string, entries: TemplateEntry[]): Promise<ActiveRun[]> =>
+      ipcRenderer.invoke('run:start', name, entries),
+    /** (main window) End a run early; its remaining entries never show. */
+    stop: (runId: string): Promise<ActiveRun[]> => ipcRenderer.invoke('run:stop', runId),
+    /** (main window) Every change to the active runs: started, shown, burned, ended. */
+    onChanged: (cb: (runs: ActiveRun[]) => void): (() => void) => {
+      const listener = (_e: unknown, runs: ActiveRun[]): void => cb(runs)
+      ipcRenderer.on('runs:changed', listener)
+      return () => ipcRenderer.removeListener('runs:changed', listener)
+    }
   },
   overlay: {
     /** (overlay window) Fetch the current pending step on mount. */
