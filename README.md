@@ -7,6 +7,27 @@ configurable interval, a fullscreen takeover pops up on top of everything
 else with the reminder text. There's a short grace period before the
 Confirm button unlocks - no other way to dismiss it.
 
+## Scheduled runs
+
+Alongside the random reminders, and able to run at the same time. A run is
+started from a template: pick one, adjust it, press **Start run**. It lives until
+its entries are done. Templates are saved runs, not a calendar - there is no
+recurrence.
+
+An entry's time is either a clock time (`14:30`, today) or an offset from the
+moment the run started (`+1h`, `+90m`, `+1h30m`, `+2min`). `+0` is the very
+start. One template ships with the app: four placeholder steps at `+0`, `+1h`, `+2h`,
+`+3h`.
+
+Every takeover - random or scheduled, from any number of overlapping runs - goes
+through one queue and the screen shows one at a time. An item waits behind the
+takeover on screen, but if it has not been shown within a minute of its moment it
+**burns**: dropped silently, never shown late. The same rule covers the app being
+closed or the machine asleep. There is no catch-up.
+
+A run entry's takeover carries one small line of context, `2 of 4 · next 14:30`.
+What remains of each run is listed in the app window.
+
 ## Stack
 
 Electron + React, built with `electron-vite`. Reminders and settings persist
