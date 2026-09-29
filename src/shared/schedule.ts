@@ -1,0 +1,116 @@
+/**
+ * Scheduled runs: the data model and the grammar of an entry's time.
+ *
+ * A run is started from a template - pick one, adjust it, press start - and it
+ * lives until its entries are done. This file owns what a template and a run
+ * are, and how the text a user types into an entry's time field ("14:30",
+ * "+1h", "+0") becomes a moment on the clock. It is shared by main (which
+ * schedules) and the renderer (which validates as the user types), so the two
+ * can never disagree about what a time means.
+ *
+ * It exists so that a run can be a plain list of moments. Deliberately absent:
+ * any recurrence. Templates are saved runs, not rules - avoiding a recurrence
+ * engine is the simplification that keeps the feature small. A separate "start
+ * activity" is absent too; `+0` already puts something at the very start.
+ */
+
+/** One line of a template: when, and what the takeover says. */
+export interface TemplateEntry {
+  id: string
+  /** As typed: an absolute clock time ("14:30") or an offset from the start ("+1h"). */
+  at: string
+  text: string
+}
+
+export interface RunTemplate {
+  id: string
+  name: string
+  entries: TemplateEntry[]
+}
+
+/**
+ * pending: not yet due, or due and waiting in the takeover queue.
+ * shown: reached the screen. burned: its moment passed without being shown.
+ */
+export type RunEntryState = 'pending' | 'shown' | 'burned'
+
+export interface RunEntry {
+  id: string
+  at: string
+  text: string
+  /** Epoch ms, resolved once when the run starts. */
+  dueAt: number
+  state: RunEntryState
+}
+
+/** A started run. It ends - and is removed - when no entry is pending. */
+export interface ActiveRun {
+  id: string
+  name: string
+  startedAt: number
+  /** Sorted by dueAt, so "n of m" and "next" read in clock order. */
+  entries: RunEntry[]
+}
+
+export type EntryTime =
+  | { kind: 'clock'; hours: number; minutes: number }
+  | { kind: 'offset'; offsetMs: number }
+
+const CLOCK = /^([01]?\d|2[0-3]):([0-5]\d)$/
+// "+0", or hours and/or minutes: "+1h", "+90m", "+2min", "+1h30m".
+const OFFSET = /^\+(?:(0)|(?:(\d+)h)?(?:(\d+)(?:m|min))?)$/
+
+/** Parse an entry's time as typed. Returns null for anything that is not one. */
+export function parseEntryTime(input: string): EntryTime | null {
+  const text = input.trim().toLowerCase().replace(/\s+/g, '')
+  const clock = CLOCK.exec(text)
+  if (clock) {
+    return { kind: 'clock', hours: Number(clock[1]), minutes: Number(clock[2]) }
+  }
+  const offset = OFFSET.exec(text)
+  if (offset && (offset[1] !== undefined || offset[2] !== undefined || offset[3] !== undefined)) {
+    const hours = Number(offset[2] ?? 0)
+    const minutes = Number(offset[3] ?? 0)
+    return { kind: 'offset', offsetMs: (hours * 60 + minutes) * 60000 }
+  }
+  return null
+}
+
+/**
+ * The moment an entry is due in a run started at `startedAt`.
+ *
+ * An offset counts from the start. A clock time is that time on the day the
+ * run starts, even when it is already past: such an entry burns at once. Rolling
+ * it over to tomorrow was rejected - it would make runs that span days, which is
+ * a concept nothing else here has, and a nudge tomorrow from a run started today
+ * is a surprise. The adjust form shows the resolved time so a past one is seen.
+ */
+export function resolveDueAt(time: EntryTime, startedAt: number): number {
+  if (time.kind === 'offset') {
+    return startedAt + time.offsetMs
+  }
+  const due = new Date(startedAt)
+  due.setHours(time.hours, time.minutes, 0, 0)
+  return due.getTime()
+}
+
+/** "14:30", local time - the one clock format the run surfaces use. */
+export function formatClock(epochMs: number): string {
+  const date = new Date(epochMs)
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+/**
+ * Shipped with the app so there is something to start on day one: four steps an
+ * hour apart, the first at the very start. Its texts are placeholders to edit.
+ */
+export const HOURLY_TEMPLATE: RunTemplate = {
+  id: 'hourly-four',
+  name: 'Every hour, 4 steps',
+  entries: [
+    { id: 'hourly-four-0', at: '+0', text: 'Step 1' },
+    { id: 'hourly-four-1', at: '+1h', text: 'Step 2' },
+    { id: 'hourly-four-2', at: '+2h', text: 'Step 3' },
+    { id: 'hourly-four-3', at: '+3h', text: 'Step 4' }
+  ]
+}
