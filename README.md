@@ -15,9 +15,12 @@ its entries are done. Templates are saved runs, not a calendar - there is no
 recurrence.
 
 An entry's time is either a clock time (`14:30`, today) or an offset from the
-moment the run started (`+1h`, `+90m`, `+1h30m`, `+2min`). `+0` is the very
-start. One template ships with the app: four placeholder steps at `+0`, `+1h`, `+2h`,
-`+3h`.
+row above it (`+1h`, `+90m`, `+1h30m`, `+2min`); the first row's offset counts
+from the moment the run started, so `+0` there is the very start. A run started
+in the morning with `12:00`, `+1h`, `+1h` nudges at 12:00, 13:00 and 14:00, and
+changing the first row moves the rest. Because order matters, rows are dragged
+into place. One template ships with the app: four placeholder steps at `+0`,
+`+1h`, `+1h`, `+1h`.
 
 Every takeover - random or scheduled, from any number of overlapping runs - goes
 through one queue and the screen shows one at a time. An item waits behind the

@@ -12,15 +12,20 @@
  * right now, so an absolute time already past - which burns at once rather than
  * rolling to tomorrow - is visible before Start rather than after.
  *
+ * Row order matters, because an offset counts from the row above. Rows are
+ * reordered by dragging their grip; the grip alone is draggable, so dragging
+ * inside a text field still selects text. A clock time earlier than the row
+ * above is allowed but flagged: the run shows rows in clock order, so it would
+ * not come where the list puts it.
+ *
  * Hand-built confirmation only (delete asks twice inline): native dialogs look
  * foreign and `window.prompt` does not work in Electron at all.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   formatClock,
-  parseEntryTime,
-  resolveDueAt,
+  resolveEntryTimes,
   type ActiveRun,
   type RunTemplate,
   type TemplateEntry
@@ -37,17 +42,32 @@ function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-/** What an entry's time field means if the run started now. */
-function describeTime(at: string, now: number): { valid: boolean; label: string } {
-  const time = parseEntryTime(at)
-  if (!time) {
-    return { valid: false, label: 'HH:MM or +1h / +30m / +0' }
-  }
-  const due = resolveDueAt(time, now)
-  if (due < now) {
-    return { valid: true, label: `${formatClock(due)} - passed, burns` }
-  }
-  return { valid: true, label: formatClock(due) }
+interface TimeLabel {
+  tone: 'ok' | 'warn' | 'invalid'
+  label: string
+}
+
+/** What each row's time field means if the run started now, in row order. */
+function describeTimes(entries: TemplateEntry[], now: number): TimeLabel[] {
+  const dueTimes = resolveEntryTimes(
+    entries.map((entry) => entry.at),
+    now
+  )
+  let previous: number | null = null
+  return dueTimes.map((due) => {
+    if (due === null) {
+      return { tone: 'invalid', label: 'HH:MM, or +1h / +30m / +0 after the row above' }
+    }
+    const before = previous
+    previous = due
+    if (due < now) {
+      return { tone: 'warn', label: `${formatClock(due)} - passed, burns` }
+    }
+    if (before !== null && due < before) {
+      return { tone: 'warn', label: `${formatClock(due)} - before the row above, runs in clock order` }
+    }
+    return { tone: 'ok', label: formatClock(due) }
+  })
 }
 
 interface RunsSectionProps {
@@ -60,6 +80,10 @@ export default function RunsSection({ templates, onTemplatesChange }: RunsSectio
   const [draft, setDraft] = useState<Draft | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  // The row being dragged, and where it would land: before the row at dropIndex.
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
+  const entryListRef = useRef<HTMLUListElement>(null)
 
   useEffect(() => {
     window.nudge.store.get().then((store) => setRuns(store.runs))
@@ -110,6 +134,36 @@ export default function RunsSection({ templates, onTemplatesChange }: RunsSectio
     setDraft({ ...draft, entries: [...draft.entries, { id: makeId(), at: '', text: '' }] })
   }
 
+  function moveEntry(from: number, to: number): void {
+    if (!draft) {
+      return
+    }
+    const entries = [...draft.entries]
+    const [moved] = entries.splice(from, 1)
+    entries.splice(to > from ? to - 1 : to, 0, moved)
+    setDraft({ ...draft, entries })
+  }
+
+  function endDrag(): void {
+    setDragIndex(null)
+    setDropIndex(null)
+  }
+
+  /**
+   * Where a row would land for a pointer at this height: before the first row
+   * whose middle is below it. Used for both the landing line and the drop
+   * itself, and computed from the drop's own position - the last dragover can
+   * lag behind the pointer, and a drop that trusted it landed a row too high.
+   */
+  function dropIndexAt(clientY: number): number {
+    const rows = [...(entryListRef.current?.children ?? [])]
+    const index = rows.findIndex((row) => {
+      const box = row.getBoundingClientRect()
+      return clientY < box.top + box.height / 2
+    })
+    return index < 0 ? rows.length : index
+  }
+
   function saveTemplate(): void {
     if (!draft) {
       return
@@ -154,11 +208,13 @@ export default function RunsSection({ templates, onTemplatesChange }: RunsSectio
     setRuns(await window.nudge.runs.stop(runId))
   }
 
+  const timeLabels = draft ? describeTimes(draft.entries, now) : []
+
   const draftValid =
     draft !== null &&
     draft.name.trim() !== '' &&
     cleanEntries(draft.entries).length > 0 &&
-    draft.entries.every((entry) => entry.text.trim() === '' || parseEntryTime(entry.at) !== null)
+    draft.entries.every((entry, index) => entry.text.trim() === '' || timeLabels[index].tone !== 'invalid')
 
   return (
     <section>
@@ -188,20 +244,72 @@ export default function RunsSection({ templates, onTemplatesChange }: RunsSectio
       </div>
 
       {draft && (
-        <div className="draft">
+        // Drag handling lives on the whole form, not the list: the natural place
+        // to drop a row that should go first is the gap above the first row,
+        // which is outside the list. And one handler means a drop is never
+        // handled twice.
+        <div
+          className="draft"
+          onDragEnd={endDrag}
+          // Cancelling dragenter too is what makes a newly entered element a
+          // drop target; without it a drop right after entering one is lost.
+          onDragEnter={(e) => {
+            if (dragIndex !== null) {
+              e.preventDefault()
+            }
+          }}
+          onDragOver={(e) => {
+            if (dragIndex === null) {
+              return
+            }
+            e.preventDefault()
+            setDropIndex(dropIndexAt(e.clientY))
+          }}
+          onDrop={(e) => {
+            e.preventDefault()
+            if (dragIndex !== null) {
+              moveEntry(dragIndex, dropIndexAt(e.clientY))
+            }
+            endDrag()
+          }}
+        >
           <input
             className="draft-name"
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             placeholder="Template name"
           />
-          <ul className="draft-entries">
-            {draft.entries.map((entry) => {
-              const time = describeTime(entry.at, now)
+          <ul className="draft-entries" ref={entryListRef}>
+            {draft.entries.map((entry, index) => {
+              const time = timeLabels[index]
+              const rowClass = [
+                dragIndex === index ? 'dragging' : '',
+                dragIndex !== null && dropIndex === index ? 'drop-before' : '',
+                dragIndex !== null && dropIndex === index + 1 && index === draft.entries.length - 1
+                  ? 'drop-after'
+                  : ''
+              ]
+                .filter(Boolean)
+                .join(' ')
               return (
-                <li key={entry.id}>
+                <li key={entry.id} className={rowClass || undefined}>
+                  <span
+                    className="draft-grip"
+                    draggable
+                    title="Drag to reorder"
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'move'
+                      const row = e.currentTarget.parentElement
+                      if (row) {
+                        e.dataTransfer.setDragImage(row, 12, row.offsetHeight / 2)
+                      }
+                      setDragIndex(index)
+                    }}
+                  >
+                    ⠿
+                  </span>
                   <input
-                    className={time.valid ? 'draft-time' : 'draft-time invalid'}
+                    className={time.tone === 'invalid' ? 'draft-time invalid' : 'draft-time'}
                     value={entry.at}
                     onChange={(e) => updateEntry(entry.id, { at: e.target.value })}
                     placeholder="+1h"
@@ -215,7 +323,7 @@ export default function RunsSection({ templates, onTemplatesChange }: RunsSectio
                   <button className="ghost" title="Remove entry" onClick={() => removeEntry(entry.id)}>
                     ×
                   </button>
-                  <span className={time.valid ? 'draft-resolved' : 'draft-resolved invalid'}>{time.label}</span>
+                  <span className={`draft-resolved ${time.tone}`}>{time.label}</span>
                 </li>
               )
             })}

@@ -11,13 +11,22 @@
  * It exists so that a run can be a plain list of moments. Deliberately absent:
  * any recurrence. Templates are saved runs, not rules - avoiding a recurrence
  * engine is the simplification that keeps the feature small. A separate "start
- * activity" is absent too; `+0` already puts something at the very start.
+ * activity" is absent too; `+0` on the first row already puts something at the
+ * very start.
+ *
+ * An offset counts from the row above it, not from the start. Offsets counted
+ * from the start were the first version and were rejected in use: a run is
+ * started in the morning, the first measurement is at lunch, and the ones after
+ * it are "an hour after that" - which from the start meant typing +5h30m, and
+ * moving lunch meant retyping every row. Chained, the lunch row is a clock time,
+ * the rest are +1h, and moving lunch moves them. The price is that row order
+ * now means something, so the adjust form lets rows be dragged.
  */
 
 /** One line of a template: when, and what the takeover says. */
 export interface TemplateEntry {
   id: string
-  /** As typed: an absolute clock time ("14:30") or an offset from the start ("+1h"). */
+  /** As typed: an absolute clock time ("14:30") or an offset from the row above ("+1h"). */
   at: string
   text: string
 }
@@ -77,21 +86,32 @@ export function parseEntryTime(input: string): EntryTime | null {
 }
 
 /**
- * The moment an entry is due in a run started at `startedAt`.
+ * The moment each row is due in a run started at `startedAt`, in row order.
  *
- * An offset counts from the start. A clock time is that time on the day the
- * run starts, even when it is already past: such an entry burns at once. Rolling
- * it over to tomorrow was rejected - it would make runs that span days, which is
- * a concept nothing else here has, and a nudge tomorrow from a run started today
- * is a surprise. The adjust form shows the resolved time so a past one is seen.
+ * An offset counts from the row above, and the first row's from the start. A
+ * clock time is that time on the day the run starts, even when already past:
+ * such a row burns at once. Rolling it to tomorrow was rejected - it would make
+ * runs that span days, which nothing else here has, and a nudge tomorrow from a
+ * run started today is a surprise. A clock time also becomes the anchor for the
+ * offsets below it. A row that does not parse is null and anchors nothing, so
+ * the rows below it chain from the last row that did.
  */
-export function resolveDueAt(time: EntryTime, startedAt: number): number {
-  if (time.kind === 'offset') {
-    return startedAt + time.offsetMs
-  }
-  const due = new Date(startedAt)
-  due.setHours(time.hours, time.minutes, 0, 0)
-  return due.getTime()
+export function resolveEntryTimes(ats: string[], startedAt: number): Array<number | null> {
+  let anchor = startedAt
+  return ats.map((at) => {
+    const time = parseEntryTime(at)
+    if (!time) {
+      return null
+    }
+    if (time.kind === 'offset') {
+      anchor += time.offsetMs
+    } else {
+      const due = new Date(startedAt)
+      due.setHours(time.hours, time.minutes, 0, 0)
+      anchor = due.getTime()
+    }
+    return anchor
+  })
 }
 
 /** "14:30", local time - the one clock format the run surfaces use. */
@@ -110,7 +130,7 @@ export const HOURLY_TEMPLATE: RunTemplate = {
   entries: [
     { id: 'hourly-four-0', at: '+0', text: 'Step 1' },
     { id: 'hourly-four-1', at: '+1h', text: 'Step 2' },
-    { id: 'hourly-four-2', at: '+2h', text: 'Step 3' },
-    { id: 'hourly-four-3', at: '+3h', text: 'Step 4' }
+    { id: 'hourly-four-2', at: '+1h', text: 'Step 3' },
+    { id: 'hourly-four-3', at: '+1h', text: 'Step 4' }
   ]
 }

@@ -16,6 +16,7 @@
   --text-dim: #9a9da3;
   --accent: #6f9cff;
   --danger: #ff6b6b;
+  --warn: #e0b45a;
 
   --radius: 8px;
   --radius-panel: 12px;
@@ -246,7 +247,7 @@ h2 {
 
 .draft-entries li {
   display: grid;
-  grid-template-columns: 90px 1fr auto;
+  grid-template-columns: auto 90px 1fr auto;
   gap: 4px 6px;
   align-items: center;
   margin-bottom: 6px;
@@ -258,9 +259,53 @@ h2 {
   padding-left: 2px;
 }
 
+.draft-grip {
+  cursor: grab;
+  color: var(--text-dim);
+  padding: 0 2px;
+  user-select: none;
+}
+
+.draft-grip:hover {
+  color: var(--text);
+}
+
+.draft-entries li.dragging {
+  opacity: 0.4;
+}
+
+/* The landing line, drawn in the row gap rather than as a border so the rows
+   do not jump while dragging. */
+.draft-entries li {
+  position: relative;
+}
+
+.draft-entries li.drop-before::before,
+.draft-entries li.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+
+.draft-entries li.drop-before::before {
+  top: -4px;
+}
+
+.draft-entries li.drop-after::after {
+  bottom: -4px;
+}
+
 .draft-time.invalid,
 .draft-time.invalid:focus {
   border-color: var(--danger);
+}
+
+.draft-resolved.warn {
+  color: var(--warn);
 }
 
 .draft-resolved.invalid,

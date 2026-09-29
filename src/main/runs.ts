@@ -17,8 +17,7 @@ import { readStore, writeStore } from './store'
 import type { TakeoverQueue } from './takeoverQueue'
 import {
   formatClock,
-  parseEntryTime,
-  resolveDueAt,
+  resolveEntryTimes,
   type ActiveRun,
   type RunEntryState,
   type TemplateEntry
@@ -49,21 +48,27 @@ export class RunScheduler {
       throw new Error(`Cannot start run "${name}": it has no entries`)
     }
     const startedAt = Date.now()
+    // Resolved in the order the rows were given, since each offset counts from
+    // the row above; only then sorted into clock order.
+    const dueTimes = resolveEntryTimes(
+      entries.map((entry) => entry.at),
+      startedAt
+    )
     const run: ActiveRun = {
       id: `${startedAt}-${Math.random().toString(36).slice(2, 8)}`,
       name,
       startedAt,
       entries: entries
-        .map((entry) => {
-          const time = parseEntryTime(entry.at)
-          if (!time) {
+        .map((entry, index) => {
+          const dueAt = dueTimes[index]
+          if (dueAt === null) {
             throw new Error(`Cannot start run "${name}": entry time "${entry.at}" is not HH:MM or +offset`)
           }
           return {
             id: entry.id,
             at: entry.at,
             text: entry.text,
-            dueAt: resolveDueAt(time, startedAt),
+            dueAt,
             state: 'pending' as const
           }
         })
