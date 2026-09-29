@@ -69,7 +69,9 @@ export class TakeoverQueue {
     }
     this.waiting.push(item)
     this.waiting.sort((a, b) => a.dueAt - b.dueAt)
-    const expiresIn = item.dueAt + LATE_TOLERANCE_MS - this.now()
+    // First millisecond isTooLate is true. Firing at the tolerance itself would
+    // burn an item a Confirm in that same millisecond is still allowed to show.
+    const expiresIn = item.dueAt + LATE_TOLERANCE_MS + 1 - this.now()
     this.expiryTimers.set(
       item,
       setTimeout(() => this.expire(item), Math.max(0, expiresIn))
@@ -117,7 +119,7 @@ export class TakeoverQueue {
   }
 
   private expire(item: QueuedTakeover): void {
-    if (!this.waiting.includes(item)) {
+    if (!this.waiting.includes(item) || !this.isTooLate(item)) {
       return
     }
     this.removeWaiting(item)

@@ -1,6 +1,6 @@
 {
   "name": "nudge",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "A Windows reminder app (Electron + React): random-interval nudges with a fullscreen takeover and a grace period before you can confirm.",
   "main": "./out/main/index.js",
   "author": "Nudge",
@@ -20,7 +20,8 @@
     "dist": "electron-vite build && electron-builder --win --publish never",
     "release": "node scripts/release.mjs",
     "icon": "node scripts/generate-icon.mjs",
-    "prepare": "git config core.hooksPath .githooks"
+    "prepare": "git config core.hooksPath .githooks",
+    "test": "node --experimental-transform-types --disable-warning=ExperimentalWarning --test test/*.test.mts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
