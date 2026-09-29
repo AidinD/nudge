@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { Reminder, StoreData } from '../../../shared/store'
+import type { RunTemplate } from '../../../shared/schedule'
 import { NudgeMark } from '../NudgeMark'
+import RunsSection from './RunsSection'
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -18,6 +20,7 @@ export default function SettingsView(): JSX.Element {
   const [maxDraft, setMaxDraft] = useState('60')
   const [running, setRunning] = useState(false)
   const [fullscreenTakeover, setFullscreenTakeover] = useState(true)
+  const [templates, setTemplates] = useState<RunTemplate[]>([])
   const [loaded, setLoaded] = useState(false)
   // Set once electron-updater has a new version on disk; the toast is the only
   // thing that tells the user, since the install itself waits for a quit.
@@ -32,6 +35,7 @@ export default function SettingsView(): JSX.Element {
       setMaxDraft(String(store.maxIntervalMinutes))
       setRunning(store.running)
       setFullscreenTakeover(store.fullscreenTakeover)
+      setTemplates(store.templates)
       setLoaded(true)
     })
   }, [])
@@ -70,6 +74,11 @@ export default function SettingsView(): JSX.Element {
     setMinDraft(String(min))
     setMaxDraft(String(max))
     persist({ minIntervalMinutes: min, maxIntervalMinutes: max })
+  }
+
+  function changeTemplates(next: RunTemplate[]): void {
+    setTemplates(next)
+    persist({ templates: next })
   }
 
   function toggleTakeoverMode(next: boolean): void {
@@ -201,6 +210,8 @@ export default function SettingsView(): JSX.Element {
           {reminders.length === 0 && <p className="hint">Add at least one reminder to start.</p>}
           {running && <p className="hint">Running - next nudge at a random time.</p>}
         </section>
+
+        <RunsSection templates={templates} onTemplatesChange={changeTemplates} />
       </div>
 
       {updateVersion !== null && (
