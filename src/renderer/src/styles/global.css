@@ -285,6 +285,22 @@ button.ghost:hover:not(:disabled) {
   margin: 0;
 }
 
+/* The instruction and its one line of run context read as a single block, so
+   the context sits close under the text rather than a full gap away. */
+.overlay-instruction {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.overlay-context {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
 .overlay-confirm {
   font-size: 18px;
   padding: 14px 40px;
@@ -301,6 +317,14 @@ button.ghost:hover:not(:disabled) {
   font-size: 16px;
   font-weight: 600;
   padding: 0 16px;
+}
+
+.overlay-corner .overlay-instruction {
+  gap: 4px;
+}
+
+.overlay-corner .overlay-context {
+  font-size: 11px;
 }
 
 .overlay-corner .overlay-confirm {

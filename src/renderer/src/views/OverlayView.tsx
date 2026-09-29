@@ -63,7 +63,10 @@ export default function OverlayView(): JSX.Element {
 
   return (
     <div className={step.mode === 'corner' ? 'overlay overlay-corner' : 'overlay'}>
-      <p className="overlay-text">{step.text}</p>
+      <div className="overlay-instruction">
+        <p className="overlay-text">{step.text}</p>
+        {step.context && <p className="overlay-context">{step.context}</p>}
+      </div>
       <button
         className="primary overlay-confirm"
         disabled={!canConfirm}
